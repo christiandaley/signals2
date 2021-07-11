@@ -1,0 +1,12 @@
+[package]
+name = "signals2"
+version = "0.1.0"
+authors = ["Christian Daley"]
+edition = "2018"
+description = "A thread-safe signal/slot library based on boost::signals2"
+repository = "https://github.com/christiandaley/signals2"
+license = "BSL-1.0"
+keywords = ["signal", "slots", "callback", "threadsafe", "connection"]
+categories = ["concurrency"]
+
+[dependencies]
