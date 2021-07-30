@@ -43,12 +43,12 @@ fn disconnect_test() {
         let conn1 = sig.connect(inc_counter.clone());
         let conn2 = sig.connect(inc_counter.clone());
         let conn2_copy = conn2.clone();
-        let _conn3 = sig.connect(inc_counter.clone()).scoped();
+        let conn3 = sig.connect(inc_counter.clone()).scoped();
 
         assert!(conn1.connected());
         assert!(conn2.connected());
         assert!(conn2_copy.connected());
-        assert!(_conn3.connected());
+        assert!(conn3.connected());
         assert_eq!(sig.count(), 3usize);
 
         sig.emit();
@@ -59,7 +59,7 @@ fn disconnect_test() {
         assert!(!conn1.connected());
         assert!(conn2.connected());
         assert!(conn2_copy.connected());
-        assert!(_conn3.connected());
+        assert!(conn3.connected());
         assert_eq!(sig.count(), 2usize);
 
         sig.emit();
@@ -70,7 +70,7 @@ fn disconnect_test() {
         assert!(!conn1.connected());
         assert!(!conn2.connected());
         assert!(!conn2_copy.connected());
-        assert!(_conn3.connected());
+        assert!(conn3.connected());
         assert_eq!(sig.count(), 1usize);
 
         sig.emit();
