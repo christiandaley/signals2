@@ -36,7 +36,7 @@ pub use emit::{Emit0, Emit1, Emit2, Emit3, Emit4, Emit5, Emit6, Emit7, Emit8, Em
 /// Defines different `connect` traits for signals.
 pub mod connect;
 #[doc(inline)]
-pub use connect::{SharedConnectionBlock, Connection, ScopedConnection, ConnectionInterface, Position, Group, 
+pub use connect::{SharedConnectionBlock, Connection, ScopedConnection, Position, Group, 
     Connect0, Connect1, Connect2, Connect3, Connect4, Connect5, Connect6, Connect7, Connect8,
     Connect9, Connect10, Connect11, Connect12};
 

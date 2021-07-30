@@ -171,23 +171,29 @@ impl_connect!(Connect10; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9; a b c d e f g h i j);
 impl_connect!(Connect11; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10; a b c d e f g h i j k);
 impl_connect!(Connect12; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11; a b c d e f g h i j k l);
 
-/// A generic interface that represents a connection to a particular slot for a particular signal.
-pub trait ConnectionInterface
+/// The implementation used by both [Connection] and [ScopedConnection].
+/// Takes a const bool parameter indicating whether it is a scoped connection or not.
+#[derive(Clone)]
+pub struct ConnectionImpl<const SCOPED: bool>
 {
-    /// Returns a weak reference to a type erased version of the underlying signal. **Do not use**.
-    /// Should really be private, but due to implementation technicalities it is public right now. 
-    fn get_weak_core(&self) -> &Weak<dyn UntypedSignalCore + Send + Sync>;
+    weak_core: Weak<dyn UntypedSignalCore + Send + Sync>,
+    slot_id: usize
+}
 
-    /// Returns the id of the underlying signal. **Do not use**. Should really be private, but due to 
-    /// implementation technicalities it is public right now.
-    fn get_slot_id(&self) -> usize;
+impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
+    fn new(weak_core: Weak<dyn UntypedSignalCore + Send + Sync>, slot_id: usize) -> Self {
+        Self {
+            weak_core,
+            slot_id
+        }
+    }
 
     /// Returns true if the underlying slot is still connected, false otherwise. Will return false 
     /// if the underlying signal no longer exists.
-    fn connected(&self) -> bool {
-        match self.get_weak_core().upgrade() {
+    pub fn connected(&self) -> bool {
+        match self.weak_core.upgrade() {
             Some(core) => {
-                core.connected(self.get_slot_id())
+                core.connected(self.slot_id)
             }
             None => false
         }
@@ -196,18 +202,18 @@ pub trait ConnectionInterface
     /// Disconnects the underlying slot. Further, repeated calls to `disconnect` will do nothing.
     /// When a connection is disconnected its underlying slot is permanently removed from the the signal's slot list.
     /// Once disconnected, there is no way to re-connect a slot.
-    fn disconnect(&self) {
-        if let Some(core) = self.get_weak_core().upgrade() {
-            core.disconnect(self.get_slot_id());
+    pub fn disconnect(&self) {
+        if let Some(core) = self.weak_core.upgrade() {
+            core.disconnect(self.slot_id);
         }
     }
 
     /// Returns true if the underlying slot is blocked, false otherwise. Will return true if either the
     /// underyling slot or underlying signal no longer exists.
-    fn blocked(&self) -> bool {        
-        match self.get_weak_core().upgrade() {
+    pub fn blocked(&self) -> bool {        
+        match self.weak_core.upgrade() {
             Some(core) => {
-                core.blocked(self.get_slot_id())
+                core.blocked(self.slot_id)
             }
             None => true
         }
@@ -215,10 +221,10 @@ pub trait ConnectionInterface
 
     /// Returns the number of [SharedConnectionBlocks](SharedConnectionBlock) currently blocking the slot. 
     /// Will return `usize::Max` if either the underyling slot or underlying signal no longer exists.
-    fn blocker_count(&self) -> usize {
-        match self.get_weak_core().upgrade() {
+    pub fn blocker_count(&self) -> usize {
+        match self.weak_core.upgrade() {
             Some(core) => {
-                core.blocker_count(self.get_slot_id())
+                core.blocker_count(self.slot_id)
             }
             None => usize::MAX
         }
@@ -226,8 +232,25 @@ pub trait ConnectionInterface
 
     #[must_use="shared connection blocks are automatically unblocked when dropped"]
     /// Gets a [SharedConnectionBlock] that can be used to temporarily block the underlying slot.
-    fn shared_block(&self, initially_blocking: bool) -> SharedConnectionBlock {
-        SharedConnectionBlock::new(self.get_weak_core().clone(), self.get_slot_id().clone(), initially_blocking)
+    pub fn shared_block(&self, initially_blocking: bool) -> SharedConnectionBlock {
+        SharedConnectionBlock::new(self.weak_core.clone(), self.slot_id, initially_blocking)
+    }
+}
+
+impl<const SCOPED: bool> Drop for ConnectionImpl<SCOPED> {
+    /// Disconnects the connection if and only if the connection is scoped.
+    fn drop(&mut self) {
+        if SCOPED {
+            self.disconnect();
+        }
+    }
+}
+
+impl ConnectionImpl<false> {
+    /// Consumes the connection and returns a [ScopedConnection].
+    #[must_use="ScopedConnection automatically disconnects when dropped"]
+    pub fn scoped(self) -> ScopedConnection {
+        ScopedConnection::new(self.weak_core.clone(), self.slot_id)
     }
 }
 
@@ -236,6 +259,8 @@ pub trait ConnectionInterface
 /// 
 /// Note that when a connection is dropped it *will not* automatically disconnect its underlying slot.
 /// See [ScopedConnection] for a connection that automatically disconnects when dropped.
+///
+/// See [ConnectionImpl] for details on the various functions implemented by connections
 /// # Examples 
 /// ```
 /// use signals2::*;
@@ -246,49 +271,13 @@ pub trait ConnectionInterface
 /// conn.disconnect(); // disconnect the slot
 /// assert_eq!(sig.emit(), None);
 /// ```
-pub struct Connection 
-{
-    weak_core: Weak<dyn UntypedSignalCore + Send + Sync>,
-    slot_id: usize
-}
+pub type Connection = ConnectionImpl<false>;
 
-impl Connection 
-{
-    fn new(weak_core: Weak<dyn UntypedSignalCore + Send + Sync>, slot_id: usize) -> Self {
-        Self {
-            weak_core,
-            slot_id
-        }
-    }
-
-    /// Consumes the connection and returns a [ScopedConnection].
-    #[must_use="ScopedConnection automatically disconnects when dropped"]
-    pub fn scoped(self) -> ScopedConnection {
-        ScopedConnection::new(&self)
-    }
-}
-
-impl ConnectionInterface for Connection {
-    fn get_weak_core(&self) -> &Weak<dyn UntypedSignalCore + Send + Sync> {
-        &self.weak_core
-    }
-
-    fn get_slot_id(&self) -> usize {
-        self.slot_id
-    }
-}
-
-impl Clone for Connection {
-    fn clone(&self) -> Self {
-        Self {
-            weak_core: self.weak_core.clone(),
-            slot_id: self.slot_id
-        }
-    }
-}
 
 /// Scoped connections are identical to regular connections, except that they will automcatically
 /// disconnect themselves when dropped.
+///
+/// See [ConnectionImpl] for details on the various functions implemented by scoped connections
 /// ```
 /// use signals2::*;
 /// 
@@ -300,45 +289,7 @@ impl Clone for Connection {
 /// 
 /// assert_eq!(sig.emit(), None);
 /// ```
-pub struct ScopedConnection {
-    weak_core: Weak<dyn UntypedSignalCore + Send + Sync>,
-    slot_id: usize
-}
-
-impl ScopedConnection {
-    fn new(conn: &Connection) -> Self {
-        Self {
-            weak_core: conn.weak_core.clone(),
-            slot_id: conn.slot_id
-        }
-    }
-}
-
-impl ConnectionInterface for ScopedConnection {
-    fn get_weak_core(&self) -> &Weak<dyn UntypedSignalCore + Send + Sync> {
-        &self.weak_core
-    }
-
-    fn get_slot_id(&self) -> usize {
-        self.slot_id
-    }
-}
-
-impl Clone for ScopedConnection {
-    fn clone(&self) -> Self {
-        Self {
-            weak_core: self.weak_core.clone(),
-            slot_id: self.slot_id
-        }
-    }
-}
-
-impl Drop for ScopedConnection {
-    /// Disconnects the connection.
-    fn drop(&mut self) {
-        self.disconnect();
-    }
-}
+pub type ScopedConnection = ConnectionImpl<true>;
 
 /// A shared connection block can be used to temporarily block a slot from executing. There can be an
 /// arbitrary number of shared connection blocks for any particular slot. If any of the shared connection blocks
