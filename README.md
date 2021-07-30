@@ -224,7 +224,7 @@ In the basic usage section we saw how a slot can use a weak signal to maintain a
 
     sig.emit(0);
 
-The issue is that a slot function cannot caputure its own connection because its connection is not created until it is actually connected to the signal. This problem can be solved by using "extended slots". Extended slots are similar to regular slots except that their functions take one more parameter: a conncetion.
+The issue is that a slot function cannot caputure its own connection because its connection is not created until it is actually connected to the signal. This problem can be solved by using "extended slots". Extended slots are similar to regular slots except that their functions take one more parameter: a connection.
 
     let sig: Signal<(i32,)> = Signal::new();
     let weak_sig = sig.weak();
