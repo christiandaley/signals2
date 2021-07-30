@@ -6,7 +6,7 @@
 use std::iter::Sum;
 
 /// Types that can be used as a combiner for a signal. 
-pub trait Combiner<R> {
+pub trait Combiner<R>: Send + Sync {
     /// The return type of the signal. May be different than the return type of
     /// the individual slots.
     type Output;

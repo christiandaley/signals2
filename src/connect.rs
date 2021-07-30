@@ -45,7 +45,7 @@ macro_rules! impl_connect {
         where 
             ($($args,)*): Clone + 'static,
             R: 'static,
-            C: Combiner<R> + Send + Sync + 'static,
+            C: Combiner<R> + 'static,
             G: Ord + Send + Sync
         {
             /// Connects the slot function `f` to the given [Group] at the given [Position]
@@ -117,14 +117,14 @@ macro_rules! impl_connect {
         where
             ($($args,)*): Clone + 'static,
             R: 'static,
-            C: Combiner<R> + Send + Sync + 'static,
+            C: Combiner<R> + 'static,
             G: Ord + Send + Sync + 'static,
         {
             fn connect_group_position<F>(&self, f: F, group: Group<G>, pos: Position) -> Connection
             where
                 F: Fn($($args,)*) -> R + Send + Sync + 'static
             {
-                let untyped_core: Arc<dyn UntypedSignalCore + Send + Sync> = self.core.clone();
+                let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
                 let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
 
                 let mut lock = self.core.lock().unwrap();
@@ -141,7 +141,7 @@ macro_rules! impl_connect {
             where
                 F: Fn(Connection, $($args,)*) -> R + Send + Sync + 'static
             {
-                let untyped_core: Arc<dyn UntypedSignalCore + Send + Sync> = self.core.clone();
+                let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
                 let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
 
                 let mut lock = self.core.lock().unwrap();
@@ -176,12 +176,12 @@ impl_connect!(Connect12; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11; a b c d e f g h 
 #[derive(Clone)]
 pub struct ConnectionImpl<const SCOPED: bool>
 {
-    weak_core: Weak<dyn UntypedSignalCore + Send + Sync>,
+    weak_core: Weak<dyn UntypedSignalCore>,
     slot_id: usize
 }
 
 impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
-    fn new(weak_core: Weak<dyn UntypedSignalCore + Send + Sync>, slot_id: usize) -> Self {
+    fn new(weak_core: Weak<dyn UntypedSignalCore>, slot_id: usize) -> Self {
         Self {
             weak_core,
             slot_id
@@ -333,13 +333,13 @@ pub type ScopedConnection = ConnectionImpl<true>;
 /// assert_eq!(sig.emit(), Some(4)); // blocker was dropped
 /// ```
 pub struct SharedConnectionBlock {
-    weak_core: Weak<dyn UntypedSignalCore + Send + Sync>,
+    weak_core: Weak<dyn UntypedSignalCore>,
     slot_id: usize,
     blocking: Mutex<bool>
 }
 
 impl SharedConnectionBlock {
-    fn new(weak_core: Weak<dyn UntypedSignalCore + Send + Sync>, slot_id: usize, initially_blocking: bool) -> Self {
+    fn new(weak_core: Weak<dyn UntypedSignalCore>, slot_id: usize, initially_blocking: bool) -> Self {
         let shared_block = Self {
             weak_core,
             slot_id,

@@ -15,7 +15,7 @@ macro_rules! impl_emit {
         pub trait $name<R, C, $($args,)*> 
         where 
             ($($args,)*): Clone,
-            C: Combiner<R> + Send + Sync + 'static
+            C: Combiner<R> + 'static
         {
             /// Executes the signal's underlying slots, passing clones of the given arguments to the slot
             /// functions. 
@@ -25,7 +25,7 @@ macro_rules! impl_emit {
         impl<R, C, G, $($args,)*> $name<R, C, $($args,)*> for Signal<($($args,)*), R, C, G> 
         where 
             ($($args,)*): Clone,
-            C: Combiner<R> + Send + Sync + 'static,
+            C: Combiner<R> + 'static,
             G: Ord + Send + Sync
         {
             fn emit(&self, $($params: $args,)*) -> C::Output {
