@@ -3,10 +3,9 @@
 // Distributed under the Boost Software License, Version 1.0. 
 // See http://www.boost.org/LICENSE_1_0.txt
 
-use std::sync::{Arc, Weak, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Weak, atomic::{AtomicBool, AtomicUsize, Ordering}};
 
 use crate::Signal;
-use crate::signal_core::UntypedSignalCore;
 use crate::combiner::Combiner;
 
 /// Represents a position to connect a slot to in a group of slots.
@@ -124,14 +123,11 @@ macro_rules! impl_connect {
             where
                 F: Fn($($args,)*) -> R + Send + Sync + 'static
             {
-                let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
-                let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
-
                 let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |($($params,)*)| f($($params,)*);
-                let conn = core_clone.connect(wrapped_f, group, pos, make_conn);
+                let conn = core_clone.connect(wrapped_f, group, pos, Connection::new);
 
                 *lock = Arc::new(core_clone);
                 conn
@@ -141,14 +137,11 @@ macro_rules! impl_connect {
             where
                 F: Fn(Connection, $($args,)*) -> R + Send + Sync + 'static
             {
-                let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
-                let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
-
                 let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |conn, ($($params,)*)| f(conn, $($params,)*);
-                let conn = core_clone.connect_extended(wrapped_f, group, pos, make_conn);
+                let conn = core_clone.connect_extended(wrapped_f, group, pos, Connection::new);
 
                 *lock = Arc::new(core_clone);
                 conn
@@ -176,24 +169,24 @@ impl_connect!(Connect12; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11; a b c d e f g h 
 #[derive(Clone)]
 pub struct ConnectionImpl<const SCOPED: bool>
 {
-    weak_core: Weak<dyn UntypedSignalCore>,
-    slot_id: usize
+    weak_connected: Weak<AtomicBool>,
+    weak_blocker_count: Weak<AtomicUsize>
 }
 
 impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
-    fn new(weak_core: Weak<dyn UntypedSignalCore>, slot_id: usize) -> Self {
+    fn new(weak_connected: Weak<AtomicBool>, weak_blocker_count: Weak<AtomicUsize>) -> Self {
         Self {
-            weak_core,
-            slot_id
+            weak_connected,
+            weak_blocker_count
         }
     }
 
     /// Returns true if the underlying slot is still connected, false otherwise. Will return false 
     /// if the underlying signal no longer exists.
     pub fn connected(&self) -> bool {
-        self.weak_core
+        self.weak_connected
             .upgrade()
-            .map(|core| core.connected(self.slot_id))
+            .map(|connected| connected.load(Ordering::SeqCst))
             .unwrap_or(false)
     }
 
@@ -201,33 +194,33 @@ impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
     /// When a connection is disconnected its underlying slot is permanently removed from the the signal's slot list.
     /// Once disconnected, there is no way to re-connect a slot.
     pub fn disconnect(&self) {
-        if let Some(core) = self.weak_core.upgrade() {
-            core.disconnect(self.slot_id);
+        if let Some(connected) = self.weak_connected.upgrade() {
+            connected.store(false, Ordering::SeqCst);
         }
     }
 
     /// Returns true if the underlying slot is blocked, false otherwise. Will return true if either the
     /// underyling slot or underlying signal no longer exists.
     pub fn blocked(&self) -> bool {        
-        self.weak_core
+        self.weak_blocker_count
             .upgrade()
-            .map(|core| core.blocked(self.slot_id))
+            .map(|blocker_count| blocker_count.load(Ordering::SeqCst) != 0usize)
             .unwrap_or(true)
     }
 
     /// Returns the number of [SharedConnectionBlocks](SharedConnectionBlock) currently blocking the slot. 
     /// Will return `usize::Max` if either the underyling slot or underlying signal no longer exists.
     pub fn blocker_count(&self) -> usize {
-        self.weak_core
+        self.weak_blocker_count
             .upgrade()
-            .map(|core| core.blocker_count(self.slot_id))
+            .map(|blocker_count| blocker_count.load(Ordering::SeqCst))
             .unwrap_or(usize::MAX)
     }
 
     #[must_use="shared connection blocks are automatically unblocked when dropped"]
     /// Gets a [SharedConnectionBlock] that can be used to temporarily block the underlying slot.
     pub fn shared_block(&self, initially_blocking: bool) -> SharedConnectionBlock {
-        SharedConnectionBlock::new(self.weak_core.clone(), self.slot_id, initially_blocking)
+        SharedConnectionBlock::new(self.weak_blocker_count.clone(), initially_blocking)
     }
 }
 
@@ -244,7 +237,7 @@ impl ConnectionImpl<false> {
     /// Consumes the connection and returns a [ScopedConnection].
     #[must_use="ScopedConnection automatically disconnects when dropped"]
     pub fn scoped(self) -> ScopedConnection {
-        ScopedConnection::new(self.weak_core.clone(), self.slot_id)
+        ScopedConnection::new(self.weak_connected.clone(), self.weak_blocker_count.clone())
     }
 }
 
@@ -327,16 +320,14 @@ pub type ScopedConnection = ConnectionImpl<true>;
 /// assert_eq!(sig.emit(), Some(4)); // blocker was dropped
 /// ```
 pub struct SharedConnectionBlock {
-    weak_core: Weak<dyn UntypedSignalCore>,
-    slot_id: usize,
+    weak_blocker_count: Weak<AtomicUsize>,
     blocking: AtomicBool
 }
 
 impl SharedConnectionBlock {
-    fn new(weak_core: Weak<dyn UntypedSignalCore>, slot_id: usize, initially_blocking: bool) -> Self {
+    fn new(weak_blocker_count: Weak<AtomicUsize>, initially_blocking: bool) -> Self {
         let shared_block = Self {
-            weak_core,
-            slot_id,
+            weak_blocker_count,
             blocking: AtomicBool::new(false)
         };
 
@@ -371,18 +362,22 @@ impl SharedConnectionBlock {
     }
 
     fn block_impl(&self, block: bool) {
-        if let Some(core) = self.weak_core.upgrade() {
-            core.block(self.slot_id, block);
+        if let Some(blocker_count) = self.weak_blocker_count.upgrade() {
+            if block {
+                blocker_count.fetch_add(1, Ordering::SeqCst);
+            } else {
+                blocker_count.fetch_sub(1, Ordering::SeqCst);
+            }
         }
 
-        self.blocking.store(block, Ordering::Release);
+        self.blocking.store(block, Ordering::SeqCst);
     }
 }
 
 impl Clone for SharedConnectionBlock {
     /// Creates a copy of the given `SharedConnectionBlock` with the same blocking state.
     fn clone(&self) -> Self {
-        SharedConnectionBlock::new(self.weak_core.clone(), self.slot_id, self.blocking())
+        SharedConnectionBlock::new(self.weak_blocker_count.clone(), self.blocking())
     }
 }
 

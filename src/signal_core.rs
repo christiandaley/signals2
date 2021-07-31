@@ -3,9 +3,8 @@
 // Distributed under the Boost Software License, Version 1.0. 
 // See http://www.boost.org/LICENSE_1_0.txt
 
-use std::sync::{RwLock, Arc, atomic::{AtomicUsize, AtomicIsize, AtomicBool, Ordering}};
-use std::collections::{BTreeMap, HashMap};
-use std::mem;
+use std::sync::{Arc, Weak, atomic::{AtomicUsize, AtomicIsize, AtomicBool, Ordering}};
+use std::collections::BTreeMap;
 
 use crate::combiner::Combiner;
 use crate::connect::{Position, Group, Connection};
@@ -18,11 +17,6 @@ fn next_position(pos: &Position) -> isize {
     };
 
     POSITION_COUNTER.fetch_add(1, Ordering::Relaxed) * sign
-}
-
-fn next_id() -> usize {
-    static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-    ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 // A key used to indentify a slot. This tuple will implement Ord
@@ -40,8 +34,8 @@ where
     R: 'static,
 {
     func: SlotFunc<Args, R>,
-    connected: AtomicBool,
-    blocker_count: AtomicUsize
+    connected: Arc<AtomicBool>,
+    blocker_count: Arc<AtomicUsize>
 }
 
 impl<Args, R> Slot<Args, R> 
@@ -57,24 +51,15 @@ where
     }
 
     fn connected(&self) -> bool {
-        self.connected.load(Ordering::Acquire)
-    }
-
-    fn disconnect(&self) {
-        self.connected.store(false,  Ordering::Release);
-    }
-
-    fn block(&self, block: bool) {
-        let val = if block {1usize} else {usize::MAX};
-        self.blocker_count.fetch_add(val, Ordering::AcqRel);
+        self.connected.load(Ordering::SeqCst)
     }
 
     fn blocked(&self) -> bool {
-        self.blocker_count() != 0usize
+        self.blocker_count.load(Ordering::SeqCst) != 0usize
     }
 
-    fn blocker_count(&self) -> usize {
-        self.blocker_count.load(Ordering::Acquire)
+    fn disconnect(&self) {
+        self.connected.store(false,  Ordering::SeqCst);
     }
 }
 
@@ -86,7 +71,6 @@ where
     G: Ord + Send + Sync
 {
     slots: BTreeMap<Arc<SlotKey<G>>, Arc<Slot<Args, R>>>,
-    ids: HashMap<usize, Arc<SlotKey<G>>>,
     combiner: Arc<C>
 }
 
@@ -100,7 +84,6 @@ where
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
-            ids: self.ids.clone(),
             combiner: self.combiner.clone()
         }
     }
@@ -113,16 +96,9 @@ where
     C: Combiner<R> + 'static,
     G: Ord + Send + Sync
 {
-    fn slot_from_id(&self, slot_id: usize) -> Option<&Slot<Args, R>> {
-        let key = self.ids.get(&slot_id)?;
-        let slot = self.slots.get(key)?;
-        Some(slot)
-    }
-
     pub fn new(combiner: C) -> Self {
         SignalCore {
             slots: BTreeMap::new(),
-            ids: HashMap::new(),
             combiner: Arc::new(combiner)
         }
     }
@@ -141,35 +117,40 @@ where
         self.combiner.combine(iter)
     }
 
-    fn connect_impl(&mut self, slot_func: SlotFunc<Args, R>, group: Group<G>, pos: Position, id: usize)
+    fn connect_impl(&mut self, slot_func: SlotFunc<Args, R>, group: Group<G>, pos: Position, connected: Arc<AtomicBool>, blocker_count: Arc<AtomicUsize>)
     {
         let key = Arc::new((group, next_position(&pos)));
+
         let new_slot: Slot<Args, R> = Slot {
             func: slot_func,
-            connected: AtomicBool::new(true),
-            blocker_count: AtomicUsize::new(0usize),
+            connected: connected,
+            blocker_count: blocker_count,
         };
-        self.slots.insert(key.clone(), Arc::new(new_slot));
 
-        self.ids.insert(id, key);
+        self.slots.insert(key, Arc::new(new_slot));
     }
 
-    pub fn connect<F>(&mut self, f: F, group: Group<G>, pos: Position, make_conn: impl FnOnce(usize) -> Connection) -> Connection
+    pub fn connect<F>(&mut self, f: F, group: Group<G>, pos: Position, make_conn: impl FnOnce(Weak<AtomicBool>, Weak<AtomicUsize>) -> Connection) -> Connection
     where
         F: Fn(Args) -> R + Send + Sync + 'static
     {
-        let id = next_id();
-        self.connect_impl(SlotFunc::Basic(Box::new(f)), group, pos, id);
-        make_conn(id)
+        let connected = Arc::new(AtomicBool::new(true));
+        let blocker_count = Arc::new(AtomicUsize::new(0usize));
+        let conn =         make_conn(Arc::downgrade(&connected), Arc::downgrade(&blocker_count));
+
+        self.connect_impl(SlotFunc::Basic(Box::new(f)), group, pos, connected, blocker_count);
+        conn
     }
 
-    pub fn connect_extended<F>(&mut self, f: F, group: Group<G>, pos: Position, make_conn: impl FnOnce(usize) -> Connection) -> Connection
+    pub fn connect_extended<F>(&mut self, f: F, group: Group<G>, pos: Position, make_conn: impl FnOnce(Weak<AtomicBool>, Weak<AtomicUsize>) -> Connection) -> Connection
     where
         F: Fn(Connection, Args) -> R + Send + Sync + 'static
     {
-        let id = next_id();
-        let conn = make_conn(id);
-        self.connect_impl(SlotFunc::Extended((Box::new(f), conn.clone())), group, pos, id);
+        let connected = Arc::new(AtomicBool::new(true));
+        let blocker_count = Arc::new(AtomicUsize::new(0usize));
+        let conn =         make_conn(Arc::downgrade(&connected), Arc::downgrade(&blocker_count));
+
+        self.connect_impl(SlotFunc::Extended((Box::new(f), conn.clone())), group, pos, connected, blocker_count);
         conn
     }
 
@@ -185,72 +166,9 @@ where
 
     pub fn clear(&mut self) {
         self.slots.clear();
-        self.ids.clear();
     }
 
     pub fn count(&self) -> usize {
-        self.slots.len()
-    }
-
-    fn remove_slot(&mut self, slot_id: usize) {
-        if let Some(key) = self.ids.remove(&slot_id) {
-            self.slots.remove(&key);
-        }
-    }
-}
-
-pub trait UntypedSignalCore: Send + Sync {
-    fn connected(&self, slot_id: usize) -> bool;
-
-    fn disconnect(&self, slot_id: usize);
-
-    fn block(&self, slot_id: usize, block: bool);
-
-    fn blocked(&self, slot_id: usize) -> bool;
-
-    fn blocker_count(&self, slot_id: usize) -> usize;
-}
-
-impl<Args, R, C, G> UntypedSignalCore for RwLock<Arc<SignalCore<Args, R, C, G>>>
-where 
-    Args: Clone + 'static,
-    R: 'static,
-    C: Combiner<R> + 'static,
-    G: Ord + Send + Sync
-{
-    fn connected(&self, slot_id: usize) -> bool {
-        self.read().unwrap().slot_from_id(slot_id)
-            .map(|slot| slot.connected())
-            .unwrap_or(false)
-    }
-
-    fn disconnect(&self, slot_id: usize) {
-        let lock = self.read().unwrap();
-        if let Some(slot) = lock.slot_from_id(slot_id) {
-            slot.disconnect();
-            mem::drop (lock);
-            let mut lock = self.write().unwrap();
-            let mut new_core = (**lock).clone();
-            new_core.remove_slot(slot_id);
-            *lock = Arc::new(new_core);
-        }
-    }
-
-    fn block(&self, slot_id: usize, block: bool) {
-        if let Some(slot) = self.read().unwrap().slot_from_id(slot_id) {
-            slot.block(block);
-        }
-    }
-
-    fn blocked(&self, slot_id: usize) -> bool {
-        self.read().unwrap().slot_from_id(slot_id)
-            .map(|slot| slot.blocked())
-            .unwrap_or(true)
-    }
-
-    fn blocker_count(&self, slot_id: usize) -> usize {
-        self.read().unwrap().slot_from_id(slot_id)
-            .map(|slot| slot.blocker_count())
-            .unwrap_or(usize::MAX)
+        self.slots.iter().filter(|(_, slot)| slot.connected()).count()
     }
 }
