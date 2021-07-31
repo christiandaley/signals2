@@ -81,7 +81,7 @@ pub struct SignalCore<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync
 {
     slots: BTreeMap<Arc<SlotKey<G>>, Arc<Slot<Args, R>>>,
@@ -93,7 +93,7 @@ impl<Args, R, C, G> Clone for SignalCore<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync
 {
     fn clone(&self) -> Self {
@@ -109,7 +109,7 @@ impl<Args, R, C, G> SignalCore<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync
 {
     fn slot_from_id(&self, slot_id: usize) -> Option<&Slot<Args, R>> {
@@ -198,7 +198,7 @@ where
     }
 }
 
-pub trait UntypedSignalCore {
+pub trait UntypedSignalCore: Send + Sync {
     fn connected(&self, slot_id: usize) -> bool;
 
     fn disconnect(&self, slot_id: usize);
@@ -214,7 +214,7 @@ impl<Args, R, C, G> UntypedSignalCore for Mutex<Arc<SignalCore<Args, R, C, G>>>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync
 {
     fn connected(&self, slot_id: usize) -> bool {

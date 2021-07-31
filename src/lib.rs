@@ -87,7 +87,7 @@ pub struct Signal<Args, R = (), C = DefaultCombiner, G = i32>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     core: Arc<Mutex<Arc<SignalCore<Args, R, C, G>>>>
@@ -97,7 +97,7 @@ impl<Args, R, C, G> Clone for Signal<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     /// Clones the corresponding signal. Note that a `Signal` is really just a handle to
@@ -124,7 +124,7 @@ impl<Args, R, C, G> Signal<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     /// Creates a new signal with a corresponding [Combiner].
@@ -171,7 +171,7 @@ impl<Args, R, C, G> Signal<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + Default + 'static,
+    C: Combiner<R> + Default + 'static,
     G: Ord + Send + Sync + 'static
 {
     /// Creates a new signal with a [Combiner] created by calling `C::default()`.
@@ -205,7 +205,7 @@ pub struct WeakSignal<Args, R = (), C = DefaultCombiner, G = i32>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     weak_core: Weak<Mutex<Arc<SignalCore<Args, R, C, G>>>>
@@ -215,7 +215,7 @@ impl<Args, R, C, G> Clone for WeakSignal<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     fn clone(&self) -> Self {
@@ -229,7 +229,7 @@ impl<Args, R, C, G> WeakSignal<Args, R, C, G>
 where 
     Args: Clone + 'static,
     R: 'static,
-    C: Combiner<R> + Send + Sync + 'static,
+    C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
     /// Returns `Some(sig)` where `sig` is the singal that the weak signal was
