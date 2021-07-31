@@ -566,3 +566,17 @@ fn connect_handle_test() {
     let conn = connect_handle.connect(|| 2);
     assert!(!conn.connected());
 }
+
+#[test]
+fn emit_handle_test() {
+    let sig: Signal<(f64, f64), f64> = Signal::new();
+    let emit_handle = sig.get_emit_handle();
+    assert_eq!(emit_handle.emit(1.0, 2.5), Some(None));
+
+    sig.connect(|x, y| x - y);
+    
+    assert_eq!(emit_handle.emit(1.0, 2.5), Some(Some(-1.5)));
+
+    mem::drop(sig);
+    assert_eq!(emit_handle.emit(1.0, 2.5), None);
+}

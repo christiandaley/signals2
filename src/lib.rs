@@ -149,6 +149,13 @@ where
         }
     }
 
+    /// Creates an [EmitHandle] that can be used to emit the signal.
+    pub fn get_emit_handle(&self) -> EmitHandle<Args, R, C, G> {
+        EmitHandle {
+            weak_sig: self.weak()
+        }
+    }
+
     /// Sets a new [Combiner] for the signal.
     pub fn set_combiner(&self, combiner: C) {
         let mut lock = self.core.write().unwrap();
@@ -260,8 +267,40 @@ where
 /// let conn = connect_handle.connect(|| 1);
 /// assert!(conn.connected());
 /// assert_eq!(sig.emit(), Some(1));
+///
+/// std::mem::drop(sig);
+/// let conn = connect_handle.connect(|| 2);
+/// assert!(!conn.connected());
 /// ```
 pub struct ConnectHandle<Args, R = (), C = DefaultCombiner, G = i32>
+where 
+    Args: Clone + 'static,
+    R: 'static,
+    C: Combiner<R> + 'static,
+    G: Ord + Send + Sync + 'static
+{
+    weak_sig: WeakSignal<Args, R, C, G>
+}
+
+
+/// A handle to a signal that allows the signal to be emitted. Useful in cases where it is 
+/// undesireable to allow unresitriced access to a signal while still allowing the signal to be 
+/// emitted. Internally, an `EmitHandle` uses a [WeakSignal]. The result of calling `emit` on an
+/// `EmitHandle` is an `Option<C::Output>` where `C` is the combiner type of the signal. If the
+/// underlying signal no longer exists, `None` is returned.
+/// # Example
+/// ```
+/// use signals2::*;
+/// 
+/// let sig: Signal<(), i32> = Signal::new();
+/// let emit_handle = sig.get_emit_handle();
+/// sig.connect(|| 1);
+/// assert_eq!(emit_handle.emit(), Some(Some(1)));
+///
+/// std::mem::drop(sig);
+/// assert_eq!(emit_handle.emit(), None);
+/// ```
+pub struct EmitHandle<Args, R = (), C = DefaultCombiner, G = i32>
 where 
     Args: Clone + 'static,
     R: 'static,

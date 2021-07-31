@@ -5,7 +5,7 @@
 
 use std::mem;
 
-use crate::Signal;
+use crate::{Signal, EmitHandle};
 use crate::combiner::Combiner;
 
 macro_rules! impl_emit {
@@ -17,9 +17,11 @@ macro_rules! impl_emit {
             ($($args,)*): Clone,
             C: Combiner<R> + 'static
         {
+            /// The return value of `emit` will be `C::Output` for [Signals](Signal) and `Option<C::Output>` for [EmitHandles](EmitHandle)
+            type Output;
             /// Executes the signal's underlying slots, passing clones of the given arguments to the slot
             /// functions. 
-            fn emit(&self, $($params: $args,)*) -> C::Output;
+            fn emit(&self, $($params: $args,)*) -> Self::Output;
         }
 
         impl<R, C, G, $($args,)*> $name<R, C, $($args,)*> for Signal<($($args,)*), R, C, G> 
@@ -28,11 +30,28 @@ macro_rules! impl_emit {
             C: Combiner<R> + 'static,
             G: Ord + Send + Sync
         {
+            type Output = C::Output;
+
             fn emit(&self, $($params: $args,)*) -> C::Output {
                 let lock = self.core.read().unwrap();
                 let handle = lock.clone();
                 mem::drop(lock);
                 handle.emit(&($($params,)*))
+            }
+        }
+
+        impl<R, C, G, $($args,)*> $name<R, C, $($args,)*> for EmitHandle<($($args,)*), R, C, G> 
+        where 
+            ($($args,)*): Clone,
+            C: Combiner<R> + 'static,
+            G: Ord + Send + Sync
+        {
+            type Output = Option<C::Output>;
+
+            fn emit(&self, $($params: $args,)*) -> Option<C::Output> {
+                self.weak_sig
+                    .upgrade()
+                    .map(|sig| sig.emit($($params,)*))
             }
         }
     };
