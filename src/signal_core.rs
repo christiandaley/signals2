@@ -3,8 +3,9 @@
 // Distributed under the Boost Software License, Version 1.0. 
 // See http://www.boost.org/LICENSE_1_0.txt
 
-use std::sync::{Mutex, Arc, atomic::{AtomicUsize, AtomicIsize, AtomicBool, Ordering}};
+use std::sync::{RwLock, Arc, atomic::{AtomicUsize, AtomicIsize, AtomicBool, Ordering}};
 use std::collections::{BTreeMap, HashMap};
+use std::mem;
 
 use crate::combiner::Combiner;
 use crate::connect::{Position, Group, Connection};
@@ -210,7 +211,7 @@ pub trait UntypedSignalCore: Send + Sync {
     fn blocker_count(&self, slot_id: usize) -> usize;
 }
 
-impl<Args, R, C, G> UntypedSignalCore for Mutex<Arc<SignalCore<Args, R, C, G>>>
+impl<Args, R, C, G> UntypedSignalCore for RwLock<Arc<SignalCore<Args, R, C, G>>>
 where 
     Args: Clone + 'static,
     R: 'static,
@@ -218,15 +219,17 @@ where
     G: Ord + Send + Sync
 {
     fn connected(&self, slot_id: usize) -> bool {
-        self.lock().unwrap().slot_from_id(slot_id)
+        self.read().unwrap().slot_from_id(slot_id)
             .map(|slot| slot.connected())
             .unwrap_or(false)
     }
 
     fn disconnect(&self, slot_id: usize) {
-        let mut lock = self.lock().unwrap();
+        let lock = self.read().unwrap();
         if let Some(slot) = lock.slot_from_id(slot_id) {
             slot.disconnect();
+            mem::drop (lock);
+            let mut lock = self.write().unwrap();
             let mut new_core = (**lock).clone();
             new_core.remove_slot(slot_id);
             *lock = Arc::new(new_core);
@@ -234,19 +237,19 @@ where
     }
 
     fn block(&self, slot_id: usize, block: bool) {
-        if let Some(slot) = self.lock().unwrap().slot_from_id(slot_id) {
+        if let Some(slot) = self.read().unwrap().slot_from_id(slot_id) {
             slot.block(block);
         }
     }
 
     fn blocked(&self, slot_id: usize) -> bool {
-        self.lock().unwrap().slot_from_id(slot_id)
+        self.read().unwrap().slot_from_id(slot_id)
             .map(|slot| slot.blocked())
             .unwrap_or(true)
     }
 
     fn blocker_count(&self, slot_id: usize) -> usize {
-        self.lock().unwrap().slot_from_id(slot_id)
+        self.read().unwrap().slot_from_id(slot_id)
             .map(|slot| slot.blocker_count())
             .unwrap_or(usize::MAX)
     }
