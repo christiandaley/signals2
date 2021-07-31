@@ -24,14 +24,14 @@ pub enum Group<G>
 where
     G: Ord + Send + Sync
 {
-    /// The unnamed "front" group. Slots in the "front" grouped are executed before
+    /// The unnamed "front" group. Slots in the "front" group are executed before
     /// slots from named groups and the unnamed "back" group.
     Front,
     /// A named group. Slots in named groups are executed after all slots in the
     /// unnamed "front" group. Individual named groups are executed according the ordering defined by the
     /// [Ord] trait.
     Named(G),
-    /// The unnamed "back" group. Slots in the "back" grouped are executed after
+    /// The unnamed "back" group. Slots in the "back" group are executed after
     /// slots from the unnamed "front" group and slots from named groups.
     Back
 }
