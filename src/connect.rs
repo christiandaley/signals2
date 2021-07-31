@@ -3,7 +3,7 @@
 // Distributed under the Boost Software License, Version 1.0. 
 // See http://www.boost.org/LICENSE_1_0.txt
 
-use std::sync::{Arc, Weak, Mutex};
+use std::sync::{Arc, Weak, atomic::{AtomicBool, Ordering}};
 
 use crate::Signal;
 use crate::signal_core::UntypedSignalCore;
@@ -127,7 +127,7 @@ macro_rules! impl_connect {
                 let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
                 let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
 
-                let mut lock = self.core.lock().unwrap();
+                let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |($($params,)*)| f($($params,)*);
@@ -144,7 +144,7 @@ macro_rules! impl_connect {
                 let untyped_core: Arc<dyn UntypedSignalCore> = self.core.clone();
                 let make_conn = |id| Connection::new(Arc::downgrade(&untyped_core), id);
 
-                let mut lock = self.core.lock().unwrap();
+                let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |conn, ($($params,)*)| f(conn, $($params,)*);
@@ -191,12 +191,10 @@ impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
     /// Returns true if the underlying slot is still connected, false otherwise. Will return false 
     /// if the underlying signal no longer exists.
     pub fn connected(&self) -> bool {
-        match self.weak_core.upgrade() {
-            Some(core) => {
-                core.connected(self.slot_id)
-            }
-            None => false
-        }
+        self.weak_core
+            .upgrade()
+            .map(|core| core.connected(self.slot_id))
+            .unwrap_or(false)
     }
 
     /// Disconnects the underlying slot. Further, repeated calls to `disconnect` will do nothing.
@@ -211,23 +209,19 @@ impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
     /// Returns true if the underlying slot is blocked, false otherwise. Will return true if either the
     /// underyling slot or underlying signal no longer exists.
     pub fn blocked(&self) -> bool {        
-        match self.weak_core.upgrade() {
-            Some(core) => {
-                core.blocked(self.slot_id)
-            }
-            None => true
-        }
+        self.weak_core
+            .upgrade()
+            .map(|core| core.blocked(self.slot_id))
+            .unwrap_or(true)
     }
 
     /// Returns the number of [SharedConnectionBlocks](SharedConnectionBlock) currently blocking the slot. 
     /// Will return `usize::Max` if either the underyling slot or underlying signal no longer exists.
     pub fn blocker_count(&self) -> usize {
-        match self.weak_core.upgrade() {
-            Some(core) => {
-                core.blocker_count(self.slot_id)
-            }
-            None => usize::MAX
-        }
+        self.weak_core
+            .upgrade()
+            .map(|core| core.blocker_count(self.slot_id))
+            .unwrap_or(usize::MAX)
     }
 
     #[must_use="shared connection blocks are automatically unblocked when dropped"]
@@ -335,7 +329,7 @@ pub type ScopedConnection = ConnectionImpl<true>;
 pub struct SharedConnectionBlock {
     weak_core: Weak<dyn UntypedSignalCore>,
     slot_id: usize,
-    blocking: Mutex<bool>
+    blocking: AtomicBool
 }
 
 impl SharedConnectionBlock {
@@ -343,7 +337,7 @@ impl SharedConnectionBlock {
         let shared_block = Self {
             weak_core,
             slot_id,
-            blocking: Mutex::new(false)
+            blocking: AtomicBool::new(false)
         };
 
         if initially_blocking {
@@ -373,7 +367,7 @@ impl SharedConnectionBlock {
     /// slot will be executed when the signal is emitted because there could be other existing blockers for
     /// the slot.
     pub fn blocking(&self) -> bool {
-        *self.blocking.lock().unwrap()
+        self.blocking.load(Ordering::Acquire)
     }
 
     fn block_impl(&self, block: bool) {
@@ -381,8 +375,7 @@ impl SharedConnectionBlock {
             core.block(self.slot_id, block);
         }
 
-        let mut lock = self.blocking.lock().unwrap();
-        *lock = block;
+        self.blocking.store(block, Ordering::Release);
     }
 }
 

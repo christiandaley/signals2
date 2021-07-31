@@ -19,7 +19,7 @@
 
 #![deny(missing_docs)]
 
-use std::sync::{Arc, Weak, Mutex};
+use std::sync::{Arc, Weak, RwLock};
 
 mod signal_core;
 use signal_core::{SignalCore};
@@ -90,7 +90,7 @@ where
     C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
-    core: Arc<Mutex<Arc<SignalCore<Args, R, C, G>>>>
+    core: Arc<RwLock<Arc<SignalCore<Args, R, C, G>>>>
 }
 
 impl<Args, R, C, G> Clone for Signal<Args, R, C, G>
@@ -131,7 +131,7 @@ where
     pub fn new_with_combiner(combiner: C) -> Self {
         let core: SignalCore<Args, R, C, G> = SignalCore::new(combiner);
         Signal {
-            core: Arc::new(Mutex::new(Arc::new(core)))
+            core: Arc::new(RwLock::new(Arc::new(core)))
         }
     }
 
@@ -144,7 +144,7 @@ where
 
     /// Sets a new [Combiner] for the signal.
     pub fn set_combiner(&self, combiner: C) {
-        let mut lock = self.core.lock().unwrap();
+        let mut lock = self.core.write().unwrap();
         let mut new_core = (**lock).clone();
         new_core.set_combiner(combiner);
         *lock = Arc::new(new_core);
@@ -153,8 +153,8 @@ where
     /// Disconnects all slots from the signal. Will cause any existing [Connections](Connection) to enter a
     /// "disconnected" state.
     pub fn clear(&self) {
-        self.core.lock().unwrap().disconnect_all();
-        let mut lock = self.core.lock().unwrap();
+        self.core.read().unwrap().disconnect_all();
+        let mut lock = self.core.write().unwrap();
         let mut new_core = (**lock).clone();
         new_core.clear();
         *lock = Arc::new(new_core);
@@ -162,8 +162,7 @@ where
 
     /// Returns the number of connected slots for the signal.
     pub fn count(&self) -> usize {
-        let lock = self.core.lock().unwrap();
-        lock.count()
+        self.core.read().unwrap().count()
     }
 }
 
@@ -208,7 +207,7 @@ where
     C: Combiner<R> + 'static,
     G: Ord + Send + Sync + 'static
 {
-    weak_core: Weak<Mutex<Arc<SignalCore<Args, R, C, G>>>>
+    weak_core: Weak<RwLock<Arc<SignalCore<Args, R, C, G>>>>
 }
 
 impl<Args, R, C, G> Clone for WeakSignal<Args, R, C, G>

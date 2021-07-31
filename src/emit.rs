@@ -29,7 +29,7 @@ macro_rules! impl_emit {
             G: Ord + Send + Sync
         {
             fn emit(&self, $($params: $args,)*) -> C::Output {
-                let lock = self.core.lock().unwrap();
+                let lock = self.core.read().unwrap();
                 let handle = lock.clone();
                 mem::drop(lock);
                 handle.emit(&($($params,)*))
