@@ -123,11 +123,26 @@ macro_rules! impl_connect {
             where
                 F: Fn($($args,)*) -> R + Send + Sync + 'static
             {
+                let weak_core = Arc::downgrade(&self.core);
+
+                let cleanup = move || {
+                    if let Some(core) = weak_core.upgrade() {
+                        let mut lock = core.write().unwrap();
+                        let mut core_clone = (**lock).clone();
+                        core_clone.cleanup();
+                        *lock = Arc::new(core_clone);
+                    }
+                };
+
+                let make_conn = move |connected, blocker_count| {
+                    Connection::new(connected, blocker_count, Arc::new(cleanup))
+                };
+
                 let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |($($params,)*)| f($($params,)*);
-                let conn = core_clone.connect(wrapped_f, group, pos, Connection::new);
+                let conn = core_clone.connect(wrapped_f, group, pos, make_conn);
 
                 *lock = Arc::new(core_clone);
                 conn
@@ -137,11 +152,26 @@ macro_rules! impl_connect {
             where
                 F: Fn(Connection, $($args,)*) -> R + Send + Sync + 'static
             {
+                let weak_core = Arc::downgrade(&self.core);
+
+                let cleanup = move || {
+                    if let Some(core) = weak_core.upgrade() {
+                        let mut lock = core.write().unwrap();
+                        let mut core_clone = (**lock).clone();
+                        core_clone.cleanup();
+                        *lock = Arc::new(core_clone);
+                    }
+                };
+
+                let make_conn = move |connected, blocker_count| {
+                    Connection::new(connected, blocker_count, Arc::new(cleanup))
+                };
+
                 let mut lock = self.core.write().unwrap();
                 let mut core_clone = (**lock).clone();
 
                 let wrapped_f = move |conn, ($($params,)*)| f(conn, $($params,)*);
-                let conn = core_clone.connect_extended(wrapped_f, group, pos, Connection::new);
+                let conn = core_clone.connect_extended(wrapped_f, group, pos, make_conn);
 
                 *lock = Arc::new(core_clone);
                 conn
@@ -170,14 +200,16 @@ impl_connect!(Connect12; T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11; a b c d e f g h 
 pub struct ConnectionImpl<const SCOPED: bool>
 {
     weak_connected: Weak<AtomicBool>,
-    weak_blocker_count: Weak<AtomicUsize>
+    weak_blocker_count: Weak<AtomicUsize>,
+    cleanup: Arc<dyn Fn() -> () + Send + Sync>
 }
 
 impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
-    fn new(weak_connected: Weak<AtomicBool>, weak_blocker_count: Weak<AtomicUsize>) -> Self {
+    fn new(weak_connected: Weak<AtomicBool>, weak_blocker_count: Weak<AtomicUsize>, cleanup: Arc<dyn Fn() -> () + Send + Sync>) -> Self {
         Self {
             weak_connected,
-            weak_blocker_count
+            weak_blocker_count,
+            cleanup
         }
     }
 
@@ -196,6 +228,7 @@ impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
     pub fn disconnect(&self) {
         if let Some(connected) = self.weak_connected.upgrade() {
             connected.store(false, Ordering::SeqCst);
+            (self.cleanup)();
         }
     }
 
@@ -237,7 +270,7 @@ impl ConnectionImpl<false> {
     /// Consumes the connection and returns a [ScopedConnection].
     #[must_use="ScopedConnection automatically disconnects when dropped"]
     pub fn scoped(self) -> ScopedConnection {
-        ScopedConnection::new(self.weak_connected.clone(), self.weak_blocker_count.clone())
+        ScopedConnection::new(self.weak_connected.clone(), self.weak_blocker_count.clone(), self.cleanup.clone())
     }
 }
 
@@ -358,7 +391,7 @@ impl SharedConnectionBlock {
     /// slot will be executed when the signal is emitted because there could be other existing blockers for
     /// the slot.
     pub fn blocking(&self) -> bool {
-        self.blocking.load(Ordering::Acquire)
+        self.blocking.load(Ordering::SeqCst)
     }
 
     fn block_impl(&self, block: bool) {

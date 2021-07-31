@@ -222,13 +222,17 @@ fn disconnect_while_emitting() {
 
     sig.connect_extended(move |conn, count| {
         if count == 100 {
+            assert_eq!(weak_sig.upgrade().unwrap().count(), 1);
             conn.disconnect();
+            assert_eq!(weak_sig.upgrade().unwrap().count(), 0);
         }
 
         1 + weak_sig.upgrade().unwrap().emit(count + 1).unwrap_or(0)
     });
 
+    assert_eq!(sig.count(), 1);
     assert_eq!(sig.emit(0), Some(101));
+    assert_eq!(sig.count(), 0);
 }
 
 #[test]

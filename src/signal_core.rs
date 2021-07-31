@@ -168,6 +168,10 @@ where
         self.slots.clear();
     }
 
+    pub fn cleanup(&mut self) {
+        self.slots.retain(|_, slot| slot.connected());
+    }
+
     pub fn count(&self) -> usize {
         self.slots.iter().filter(|(_, slot)| slot.connected()).count()
     }
