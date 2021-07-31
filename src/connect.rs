@@ -260,7 +260,7 @@ impl ConnectionImpl<false> {
 /// Note that when a connection is dropped it *will not* automatically disconnect its underlying slot.
 /// See [ScopedConnection] for a connection that automatically disconnects when dropped.
 ///
-/// See [ConnectionImpl] for details on the various functions implemented by connections
+/// See [ConnectionImpl] for details on the various functions implemented by connections.
 /// # Examples 
 /// ```
 /// use signals2::*;
@@ -277,7 +277,7 @@ pub type Connection = ConnectionImpl<false>;
 /// Scoped connections are identical to regular connections, except that they will automcatically
 /// disconnect themselves when dropped.
 ///
-/// See [ConnectionImpl] for details on the various functions implemented by scoped connections
+/// See [ConnectionImpl] for details on the various functions implemented by scoped connections.
 /// ```
 /// use signals2::*;
 /// 
