@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Weak, atomic::{AtomicBool, AtomicUsize, Ordering}};
 
-use crate::Signal;
+use crate::{Signal, ConnectHandle};
 use crate::combiner::Combiner;
 
 /// Represents a position to connect a slot to in a group of slots.
@@ -177,6 +177,35 @@ macro_rules! impl_connect {
                 conn
             }
         }
+
+        // Implement Connect traits for COnnectHandle
+        impl<R, C, G, $($args,)*> $name<R, C, G, $($args,)*> for ConnectHandle<($($args,)*), R, C, G> 
+        where
+            ($($args,)*): Clone + 'static,
+            R: 'static,
+            C: Combiner<R> + 'static,
+            G: Ord + Send + Sync + 'static,
+        {
+            fn connect_group_position<F>(&self, f: F, group: Group<G>, pos: Position) -> Connection
+            where
+                F: Fn($($args,)*) -> R + Send + Sync + 'static
+            {
+                self.weak_sig
+                    .upgrade()
+                    .map(|sig| sig.connect_group_position(f, group, pos))
+                    .unwrap_or(Connection::empty())
+            }
+
+            fn connect_group_position_extended<F>(&self, f: F, group: Group<G>, pos: Position) -> Connection
+            where
+                F: Fn(Connection, $($args,)*) -> R + Send + Sync + 'static
+            {
+                self.weak_sig
+                    .upgrade()
+                    .map(|sig| sig.connect_group_position_extended(f, group, pos))
+                    .unwrap_or(Connection::empty())
+            }
+        }
     };
 }
 
@@ -210,6 +239,14 @@ impl<const SCOPED: bool> ConnectionImpl<SCOPED> {
             weak_connected,
             weak_blocker_count,
             cleanup
+        }
+    }
+
+    fn empty() -> Self {
+        Self {
+            weak_connected: Weak::new(),
+            weak_blocker_count: Weak::new(),
+            cleanup: Arc::new(|| ())
         }
     }
 

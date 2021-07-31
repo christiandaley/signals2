@@ -326,18 +326,12 @@ fn position_group_order_test() {
 
 #[test]
 fn weak_signal_test() {
-    let mut weak_sig: Option<WeakSignal<()>> = None;
-    assert!(weak_sig.is_none());
-    {
-        let sig: Signal<()> = Signal::new();
-        weak_sig = Some(sig.weak());
+    let sig: Signal<()> = Signal::new();
+    let weak_sig = sig.weak();
 
-        assert!(weak_sig.is_some());
-        assert!(weak_sig.clone().map(|weak| weak.upgrade ()).flatten().is_some());
-    }
-
-    assert!(weak_sig.is_some());
-    assert!(weak_sig.map(|weak| weak.upgrade ()).flatten().is_none());
+    assert!(weak_sig.upgrade ().is_some());
+    mem::drop(sig);
+    assert!(weak_sig.upgrade ().is_none());
 }
 
 #[test]
@@ -557,4 +551,18 @@ fn mutually_recursive_connect_test() {
     });
 
     assert_eq!(sig1.emit(0, 39), 12131);
+}
+
+#[test]
+fn connect_handle_test() {
+    let sig: Signal<(), i32> = Signal::new();
+    let connect_handle = sig.get_connect_handle();
+    let conn = connect_handle.connect(|| 1);
+    assert!(conn.connected());
+    assert_eq!(sig.count(), 1);
+    assert_eq!(sig.emit(), Some(1));
+
+    mem::drop(sig);
+    let conn = connect_handle.connect(|| 2);
+    assert!(!conn.connected());
 }

@@ -142,6 +142,13 @@ where
         }
     }
 
+    /// Creates a [ConnectHandle] that can be used to connect new slots to the signal.
+    pub fn get_connect_handle(&self) -> ConnectHandle<Args, R, C, G> {
+        ConnectHandle {
+            weak_sig: self.weak()
+        }
+    }
+
     /// Sets a new [Combiner] for the signal.
     pub fn set_combiner(&self, combiner: C) {
         let mut lock = self.core.write().unwrap();
@@ -237,4 +244,29 @@ where
     pub fn upgrade(&self) -> Option<Signal<Args, R, C, G>> {
         self.weak_core.upgrade().map(|core| Signal {core})
     }
+}
+
+/// A handle to a signal that allows new slots to be connected to the underlying signal.
+/// Useful in cases where it is undesireable to allow unresitriced access to a signal while
+/// still allowing new slots to be connected. Internally, a `ConnectHandle` uses a [WeakSignal].
+/// If the underlying signal no longer exists, `connect` will return a connection that is in a 
+/// disconnected state.
+/// # Example
+/// ```
+/// use signals2::*;
+/// 
+/// let sig: Signal<(), i32> = Signal::new();
+/// let connect_handle = sig.get_connect_handle();
+/// let conn = connect_handle.connect(|| 1);
+/// assert!(conn.connected());
+/// assert_eq!(sig.emit(), Some(1));
+/// ```
+pub struct ConnectHandle<Args, R = (), C = DefaultCombiner, G = i32>
+where 
+    Args: Clone + 'static,
+    R: 'static,
+    C: Combiner<R> + 'static,
+    G: Ord + Send + Sync + 'static
+{
+    weak_sig: WeakSignal<Args, R, C, G>
 }
