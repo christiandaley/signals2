@@ -4,7 +4,8 @@
 // See http://www.boost.org/LICENSE_1_0.txt
 
 use std::sync::{Arc, Weak, atomic::{AtomicUsize, AtomicIsize, AtomicBool, Ordering}};
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::cmp;
 
 use crate::combiner::Combiner;
 use crate::connect::{Position, Group, Connection};
@@ -28,20 +29,63 @@ enum SlotFunc<Args, R> {
     Extended((Box<dyn Fn(Connection, Args) -> R + Send + Sync + 'static>, Connection))
 }
 
-struct Slot<Args, R> 
+struct Slot<Args, R, G> 
 where
     Args: 'static,
     R: 'static,
+    G: Ord + Send + Sync + 'static
 {
     func: SlotFunc<Args, R>,
     connected: Arc<AtomicBool>,
-    blocker_count: Arc<AtomicUsize>
+    blocker_count: Arc<AtomicUsize>,
+    key: SlotKey<G>
 }
 
-impl<Args, R> Slot<Args, R> 
+impl<Args, R, G> PartialEq for Slot<Args, R, G> 
 where 
     Args: 'static,
     R: 'static,
+    G: Ord + Send + Sync + 'static
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.key.eq(&other.key)
+    }
+}
+
+impl<Args, R, G> Eq for Slot<Args, R, G> 
+where 
+    Args: 'static,
+    R: 'static,
+    G: Ord + Send + Sync + 'static
+{}
+
+impl<Args, R, G> PartialOrd for Slot<Args, R, G> 
+where 
+    Args: 'static,
+    R: 'static,
+    G: Ord + Send + Sync + 'static
+{
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl<Args, R, G> Ord for Slot<Args, R, G> 
+where 
+    Args: 'static,
+    R: 'static,
+    G: Ord + Send + Sync + 'static
+{
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
+impl<Args, R, G> Slot<Args, R, G> 
+where 
+    Args: 'static,
+    R: 'static,
+    G: Ord + Send + Sync + 'static
 {
     fn emit(&self, args: Args) -> R {
         match &self.func {
@@ -68,9 +112,9 @@ where
     Args: Clone + 'static,
     R: 'static,
     C: Combiner<R> + 'static,
-    G: Ord + Send + Sync
+    G: Ord + Send + Sync + 'static
 {
-    slots: BTreeMap<Arc<SlotKey<G>>, Arc<Slot<Args, R>>>,
+    slots: BTreeSet<Arc<Slot<Args, R, G>>>,
     combiner: Arc<C>
 }
 
@@ -94,18 +138,18 @@ where
     Args: Clone + 'static,
     R: 'static,
     C: Combiner<R> + 'static,
-    G: Ord + Send + Sync
+    G: Ord + Send + Sync + 'static
 {
     pub fn new(combiner: C) -> Self {
         SignalCore {
-            slots: BTreeMap::new(),
+            slots: BTreeSet::new(),
             combiner: Arc::new(combiner)
         }
     }
 
     pub fn emit(&self, args: &Args) -> C::Output {
         let iter = self.slots.iter().filter_map(
-            |(_, slot)| {
+            |slot| {
                 if slot.connected() && !slot.blocked() {
                     Some(slot.emit(args.clone()))
                 } else {
@@ -119,15 +163,14 @@ where
 
     fn connect_impl(&mut self, slot_func: SlotFunc<Args, R>, group: Group<G>, pos: Position, connected: Arc<AtomicBool>, blocker_count: Arc<AtomicUsize>)
     {
-        let key = Arc::new((group, next_position(&pos)));
-
-        let new_slot: Slot<Args, R> = Slot {
+        let new_slot: Slot<Args, R, G> = Slot {
             func: slot_func,
             connected: connected,
             blocker_count: blocker_count,
+            key: (group, next_position(&pos))
         };
 
-        self.slots.insert(key, Arc::new(new_slot));
+        self.slots.insert(Arc::new(new_slot));
     }
 
     pub fn connect<F>(&mut self, f: F, group: Group<G>, pos: Position, make_conn: impl FnOnce(Weak<AtomicBool>, Weak<AtomicUsize>) -> Connection) -> Connection
@@ -159,7 +202,7 @@ where
     }
 
     pub fn disconnect_all(&self) {
-        for (_, slot) in self.slots.iter() {
+        for slot in self.slots.iter() {
             slot.disconnect();
         }
     }
@@ -169,10 +212,10 @@ where
     }
 
     pub fn cleanup(&mut self) {
-        self.slots.retain(|_, slot| slot.connected());
+        self.slots.retain(|slot| slot.connected());
     }
 
     pub fn count(&self) -> usize {
-        self.slots.iter().filter(|(_, slot)| slot.connected()).count()
+        self.slots.iter().filter(|slot| slot.connected()).count()
     }
 }
