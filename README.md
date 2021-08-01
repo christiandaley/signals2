@@ -145,6 +145,31 @@ Shared connection blocks automatically unblock themselved when dropped.
     assert_eq!(conn.blocker_count(), 0);
     assert_eq!(sig.emit(), Some(4)); // blocker was dropped
 
+## Using `ConnectHandles` and `EmitHandles` to limit access to a signal
+There may be cases where it is undesireable to allow public access to a signal while still needing to connect new slots to the signal or emit the signal. For example, consider a library with a struct that has a public signal member. The desired programming pattern may be for users of the library to connect slots to the struct's signal while the struct periodically emits its own signal. But if the signal is a public member, this gives users of the library full access to the signal's API, including the ability to `emit` the signal. This is problematic if the struct itself should be the only one with permission to emit the signal. The same problem can happen in reverse: a struct with a public signal that library users should be able to `emit`, but not be able to connect slots to or disconnect slots from.
+
+The solution to these two problems are `ConnectHandles` and `EmmitHandles`. A `ConnectHandle` is an object that allows new slots to be added to a signal while not allowing the signal to be emitted. Likewise, an `EmitHandle` is an object that allows a signal to be emitted without allowing slots to be connected or disconnected. Below is an example of using a `ConnectHandle`.
+
+    let sig: Signal<(), i32> = Signal::new();
+    let connect_handle = sig.get_connect_handle();
+    let conn = connect_handle.connect(|| 1);
+    assert!(conn.connected());
+    assert_eq!(sig.emit(), Some(1));
+    
+    std::mem::drop(sig);
+    let conn = connect_handle.connect(|| 2);
+    assert!(!conn.connected());
+
+An example of using an `EmitHandle`.
+
+    let sig: Signal<(), i32> = Signal::new();
+    let emit_handle = sig.get_emit_handle();
+    sig.connect(|| 1);
+    assert_eq!(emit_handle.emit(), Some(Some(1)));
+    
+    std::mem::drop(sig);
+    assert_eq!(emit_handle.emit(), None);
+
 ## Custom combiners
 The return value of calling `emit` on a signal is determined by the combiner type of the signal. The default combiner simply returns an `Option` that represents the return value of the last slot to be executed (`None` in the case where no slot was executed). A custom combiner can be created by implementing the `Combiner<R>` trait on some type. Note that consuming the iterator passed to the `combine()` function of the `Combiner` trait is what causes slots to execute. A slot is executed each time the `next` function is called on the iterator. 
 
