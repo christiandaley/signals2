@@ -9,7 +9,7 @@
 * [Basic usage](#basic-usage)
 * [Advanced usage](#advanced-usage)
 * [Concurrency](#concurrency)
-* [Changelog](#changelog)
+* [Changelog](CHANGES.md)
 
 # Basic usage
 These basic use patterns should cover most usage scenarios. 
