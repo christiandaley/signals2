@@ -16,6 +16,7 @@
 //!
 //! ### Links
 //! * [Github](https://github.com/christiandaley/signals2/)
+//! * [Changelog](https://github.com/christiandaley/signals2#changelog)
 
 #![deny(missing_docs)]
 
