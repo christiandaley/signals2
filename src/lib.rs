@@ -121,6 +121,19 @@ where
     }
 }
 
+impl<Args, R, C, G> Default for Signal<Args, R, C, G>
+where 
+    Args: Clone + 'static,
+    R: 'static,
+    C: Combiner<R> + Default + 'static,
+    G: Ord + Send + Sync + 'static
+{
+    /// Creates a default signal with a [Combiner] created by calling `C::default()`.
+    fn default() -> Self {
+        Self::new_with_combiner(C::default())
+    }
+}
+
 impl<Args, R, C, G> Signal<Args, R, C, G>
 where 
     Args: Clone + 'static,
@@ -188,9 +201,9 @@ where
     C: Combiner<R> + Default + 'static,
     G: Ord + Send + Sync + 'static
 {
-    /// Creates a new signal with a [Combiner] created by calling `C::default()`.
+    /// Equivalent to calling `Signal::default()`.
     pub fn new() -> Self {
-        Self::new_with_combiner(C::default())
+        Self::default()
     }
 }
 
