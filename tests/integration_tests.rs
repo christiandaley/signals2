@@ -580,3 +580,11 @@ fn emit_handle_test() {
     mem::drop(sig);
     assert_eq!(emit_handle.emit(1.0, 2.5), None);
 }
+
+#[test]
+fn default_test() {
+    let sig: Signal<(), i32> = Signal::default();
+    assert_eq!(sig.emit(), None);
+    sig.connect(|| 5);
+    assert_eq!(sig.emit(), Some(5));
+}

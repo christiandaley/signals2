@@ -1,3 +1,6 @@
+## [0.3.2](https://github.com/christiandaley/signals2/releases/tag/v0.3.2) - 2022-01-18
+- Added `Signal::default` function.
+
 ## [0.3.1](https://github.com/christiandaley/signals2/releases/tag/v0.3.1) - 2021-07-31
 - Switched to using `BTreeSet` instead of `BTreeMap` to store the slots in the signal core
 
