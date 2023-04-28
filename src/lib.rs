@@ -5,7 +5,7 @@
 
 //! # signals2
 //!
-//! `signals2` is a thread-safe signal/slot library based on the [boost::signals2](https://www.boost.org/doc/libs/1_76_0/doc/html/signals2.html)
+//! `signals2` is a thread-safe signal/slot library inspired by the [boost::signals2](https://www.boost.org/doc/libs/1_76_0/doc/html/signals2.html)
 //! C++ library. [Signals](Signal) are objects that contain a list of callback functions ("slots") to be executed when the signal is
 //! "emitted". Signals and their corresponding slots can be managed through the use of [connections](Connection)
 //! and [shared connection blocks](SharedConnectionBlock).
