@@ -1,6 +1,6 @@
 [package]
 name = "signals2"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Christian Daley"]
 edition = "2018"
 description = "A thread-safe signal/slot library inspired by boost::signals2"
