@@ -1,6 +1,6 @@
 # About
 
-`signals2` is a thread-safe signal/slot library based on the [boost::signals2](https://www.boost.org/doc/libs/1_76_0/doc/html/signals2.html) C++ library. Signals are objects that contain a list of callback functions ("slots") to be executed when the signal is "emitted". Signals and their corresponding slots can be managed through the use of connections and shared connection blocks.
+`signals2` is a thread-safe signal/slot library inspired by the [boost::signals2](https://www.boost.org/doc/libs/1_76_0/doc/html/signals2.html) C++ library. Signals are objects that contain a list of callback functions ("slots") to be executed when the signal is "emitted". Signals and their corresponding slots can be managed through the use of connections and shared connection blocks.
 
 `signals2` contains no unsafe code and compiles on stable Rust 1.53.
 

@@ -1,3 +1,6 @@
+## [0.3.3](https://github.com/christiandaley/signals2/releases/tag/v0.3.3) - 2023-04-27
+- Update documentation to say "inspired by" boost::signals2 rather than "based on"
+
 ## [0.3.2](https://github.com/christiandaley/signals2/releases/tag/v0.3.2) - 2022-01-18
 - Added `Signal::default` function.
 
